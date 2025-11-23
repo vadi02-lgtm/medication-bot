@@ -9,7 +9,7 @@ import threading
 import signal
 import sys
 
-print("🐱 БОТ-НАПОМИНАЛКА С КОТИКАМИ (RAILWAY OPTIMIZED)")
+print("🐱 БОТ-НАПОМИНАЛКА С КОТИКАМИ (TIMEZONE FIXED)")
 print("=" * 50)
 
 # Создаем Flask приложение для Railway
@@ -53,7 +53,7 @@ class MedicationReminderBot:
                 user_id INTEGER PRIMARY KEY,
                 chat_id INTEGER,
                 is_active INTEGER DEFAULT 1,
-                reminder_time TEXT DEFAULT '22:00',
+                reminder_time TEXT DEFAULT '19:00',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -180,7 +180,7 @@ class MedicationReminderBot:
             }
         return None
     
-    def save_user_settings(self, user_id, chat_id, is_active=True, reminder_time="22:00"):
+    def save_user_settings(self, user_id, chat_id, is_active=True, reminder_time="19:00"):
         """Сохраняет настройки пользователя"""
         cursor = self.conn.cursor()
         cursor.execute('''
@@ -243,11 +243,11 @@ class MedicationReminderBot:
         }
     
     def create_time_keyboard(self):
-        """Создает клавиатуру для выбора времени"""
+        """Создает клавиатуру для выбора времени с учетом разницы +3 часа"""
         times = [
-            ["08:00", "12:00"],
-            ["18:00", "20:00"],
-            ["21:00", "22:00"],
+            ["19:00 (22:00 ваше)", "20:00 (23:00 ваше)"],
+            ["18:00 (21:00 ваше)", "17:00 (20:00 ваше)"],
+            ["16:00 (19:00 ваше)", "15:00 (18:00 ваше)"],
             ["Назад"]
         ]
         
@@ -278,7 +278,7 @@ class MedicationReminderBot:
         except Exception as e:
             self.log(f"❌ Ошибка отправки напоминания: {e}")
     
-    async def start_reminder_for_user(self, user_id, chat_id, reminder_time="22:00"):
+    async def start_reminder_for_user(self, user_id, chat_id, reminder_time="19:00"):
         """Запускает ежедневное напоминание для пользователя"""
         if user_id in self.reminder_tasks:
             self.reminder_tasks[user_id].cancel()
@@ -286,8 +286,12 @@ class MedicationReminderBot:
         async def daily_reminder():
             while self.is_running:
                 try:
+                    # Текущее время на сервере (UTC+3)
                     now = datetime.now()
-                    target_time = datetime.strptime(reminder_time, "%H:%M").time()
+                    
+                    # Извлекаем только время из текста (например "19:00" из "19:00 (22:00 ваше)")
+                    server_time_str = reminder_time.split(' ')[0]
+                    target_time = datetime.strptime(server_time_str, "%H:%M").time()
                     
                     # Вычисляем время до следующего напоминания
                     target_datetime = datetime.combine(now.date(), target_time)
@@ -296,7 +300,12 @@ class MedicationReminderBot:
                     
                     wait_seconds = (target_datetime - now).total_seconds()
                     
-                    self.log(f"⏰ Пользователь {user_id}: ждем {wait_seconds:.0f} сек до {reminder_time}")
+                    # Вычисляем пользовательское время для логов
+                    server_time = datetime.strptime(server_time_str, "%H:%M")
+                    user_time = server_time + timedelta(hours=3)
+                    user_time_str = user_time.strftime("%H:%M")
+                    
+                    self.log(f"⏰ Пользователь {user_id}: ждем {wait_seconds:.0f} сек до {server_time_str} (сервер) = {user_time_str} (ваше время)")
                     
                     # Ждем до времени напоминания с проверкой running
                     wait_intervals = max(1, int(wait_seconds / 60))
@@ -322,7 +331,13 @@ class MedicationReminderBot:
         
         task = asyncio.create_task(daily_reminder())
         self.reminder_tasks[user_id] = task
-        self.log(f"✅ Запущено напоминание для {user_id} в {reminder_time}")
+        
+        # Вычисляем пользовательское время для лога
+        server_time = datetime.strptime(reminder_time.split(' ')[0], "%H:%M")
+        user_time = server_time + timedelta(hours=3)
+        user_time_str = user_time.strftime("%H:%M")
+        
+        self.log(f"✅ Запущено напоминание для {user_id} в {user_time_str} (по вашему времени)")
     
     async def stop_reminder_for_user(self, user_id):
         """Останавливает напоминание для пользователя"""
@@ -350,6 +365,7 @@ class MedicationReminderBot:
                 "🐱 <b>Бот-напоминалка с котиками</b> 💊\n\n"
                 "Я буду напоминать вам выпить таблетки каждый день в указанное время "
                 "и радовать фотографиями котиков! 😻\n\n"
+                "<b>Внимание:</b> Сервер находится в UTC+3, время автоматически корректируется.\n\n"
                 "<b>Команды:</b>\n"
                 "✅ Включить напоминания - запустить ежедневные напоминания\n"
                 "❌ Выключить напоминания - остановить напоминания\n"
@@ -364,9 +380,14 @@ class MedicationReminderBot:
             self.save_user_settings(user_id, chat_id, is_active=True)
             await self.start_reminder_for_user(user_id, chat_id, settings['reminder_time'])
             
+            # Вычисляем пользовательское время для отображения
+            server_time = datetime.strptime(settings['reminder_time'].split(' ')[0], "%H:%M")
+            user_time = server_time + timedelta(hours=3)
+            user_time_str = user_time.strftime("%H:%M")
+            
             response = (
                 f"✅ <b>Напоминания включены!</b>\n\n"
-                f"Я буду напоминать вам каждый день в <b>{settings['reminder_time']}</b>\n"
+                f"Я буду напоминать вам каждый день в <b>{user_time_str}</b> (по вашему времени)\n"
                 f"Не забудьте выпить таблетки! 💊"
             )
             await self.send_message(chat_id, response, self.create_main_keyboard())
@@ -379,17 +400,19 @@ class MedicationReminderBot:
             await self.send_message(chat_id, response, self.create_main_keyboard())
             
         elif text == "⚙️ Настроить время":
-            response = "🕐 Выберите время для ежедневного напоминания:"
+            response = "🕐 Выберите время для ежедневного напоминания (указано ваше местное время):"
             await self.send_message(chat_id, response, self.create_time_keyboard())
             
-        elif text in ["08:00", "12:00", "18:00", "20:00", "21:00", "22:00"]:
+        elif text in ["19:00 (22:00 ваше)", "20:00 (23:00 ваше)", "18:00 (21:00 ваше)", "17:00 (20:00 ваше)", "16:00 (19:00 ваше)", "15:00 (18:00 ваше)"]:
             self.save_user_settings(user_id, chat_id, reminder_time=text)
             
             # Перезапускаем напоминание с новым временем
             if settings['is_active']:
                 await self.start_reminder_for_user(user_id, chat_id, text)
             
-            response = f"🕐 <b>Время установлено!</b>\nНапоминания будут в <b>{text}</b>"
+            # Извлекаем пользовательское время для отображения
+            user_time_str = text.split(' ')[1].strip('()')
+            response = f"🕐 <b>Время установлено!</b>\nНапоминания будут в <b>{user_time_str}</b> (по вашему времени)"
             await self.send_message(chat_id, response, self.create_main_keyboard())
             
         elif text == "Назад":
@@ -397,11 +420,17 @@ class MedicationReminderBot:
             
         elif text == "📊 Статус":
             status = "🟢 ВКЛЮЧЕНЫ" if settings['is_active'] else "🔴 ВЫКЛЮЧЕНЫ"
+            
+            # Вычисляем пользовательское время для отображения
+            server_time = datetime.strptime(settings['reminder_time'].split(' ')[0], "%H:%M")
+            user_time = server_time + timedelta(hours=3)
+            user_time_str = user_time.strftime("%H:%M")
+            
             response = (
                 f"📊 <b>Текущие настройки:</b>\n\n"
                 f"• Напоминания: <b>{status}</b>\n"
-                f"• Время: <b>{settings['reminder_time']}</b>\n"
-                f"• Следующее напоминание: <b>сегодня в {settings['reminder_time']}</b>"
+                f"• Время: <b>{user_time_str}</b> (по вашему времени)\n"
+                f"• Следующее напоминание: <b>сегодня в {user_time_str}</b>"
             )
             await self.send_message(chat_id, response, self.create_main_keyboard())
             
@@ -430,7 +459,13 @@ class MedicationReminderBot:
         
         for user_id, chat_id, reminder_time in active_users:
             await self.start_reminder_for_user(user_id, chat_id, reminder_time)
-            self.log(f"♻️ Восстановлено напоминание для {user_id} в {reminder_time}")
+            
+            # Вычисляем пользовательское время для лога
+            server_time = datetime.strptime(reminder_time.split(' ')[0], "%H:%M")
+            user_time = server_time + timedelta(hours=3)
+            user_time_str = user_time.strftime("%H:%M")
+            
+            self.log(f"♻️ Восстановлено напоминание для {user_id} в {user_time_str} (по вашему времени)")
     
     async def run_bot(self):
         """Главный цикл бота"""
@@ -550,8 +585,9 @@ def run_flask_app():
 async def main():
     """Основная функция запуска"""
     print("=" * 50)
-    print("🐱 TELEGRAM БОТ-НАПОМИНАЛКА (RAILWAY OPTIMIZED)")
+    print("🐱 TELEGRAM БОТ-НАПОМИНАЛКА (TIMEZONE FIXED)")
     print("💊 Ежедневные напоминания + котики!")
+    print("⏰ Время автоматически корректируется (UTC+3)")
     print("=" * 50)
     
     # Запускаем бота в фоновой задаче
