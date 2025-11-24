@@ -53,7 +53,7 @@ class MedicationReminderBot:
                 user_id INTEGER PRIMARY KEY,
                 chat_id INTEGER,
                 is_active INTEGER DEFAULT 1,
-                reminder_time TEXT DEFAULT '19:00',
+                reminder_time TEXT DEFAULT '19:00 (22:00 ваше)',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -180,7 +180,7 @@ class MedicationReminderBot:
             }
         return None
     
-    def save_user_settings(self, user_id, chat_id, is_active=True, reminder_time="19:00"):
+    def save_user_settings(self, user_id, chat_id, is_active=True, reminder_time="19:00 (22:00 ваше)"):
         """Сохраняет настройки пользователя"""
         cursor = self.conn.cursor()
         cursor.execute('''
@@ -278,7 +278,7 @@ class MedicationReminderBot:
         except Exception as e:
             self.log(f"❌ Ошибка отправки напоминания: {e}")
     
-    async def start_reminder_for_user(self, user_id, chat_id, reminder_time="19:00"):
+    async def start_reminder_for_user(self, user_id, chat_id, reminder_time="19:00 (22:00 ваше)"):
         """Запускает ежедневное напоминание для пользователя"""
         if user_id in self.reminder_tasks:
             self.reminder_tasks[user_id].cancel()
